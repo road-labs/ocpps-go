@@ -102,13 +102,16 @@ type soapFaultCode struct {
 	Subcode *soapFaultSubCode
 }
 
-// soapFaultSubCode is OCPP-S 1.6's deliberate departure from SOAP 1.2 §5.4.1.3: the SubCode element (and its
-// Value child by default-namespace inheritance) sit in the OCPP namespace, not the SOAP envelope namespace.
 type soapFaultSubCode struct {
-	XMLName xml.Name `xml:"Subcode"`
-	XMLNS   string   `xml:"xmlns,attr"`
-	Value   string   `xml:"Value"`
+	XMLName xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Subcode"`
+	Value   soapFaultSubCodeValue
 	Subcode *soapFaultSubCode
+}
+
+type soapFaultSubCodeValue struct {
+	XMLName xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Value"`
+	OcppNS  string   `xml:"xmlns:ocpp,attr,omitempty"`
+	Content string   `xml:",chardata"`
 }
 
 type callEnvelope struct {
@@ -311,8 +314,10 @@ func marshalCallError(env callErrorEnvelope) ([]byte, error) {
 		Code: soapFaultCode{
 			Value: string(faultCodeFor(env.CallError.ErrorCode)),
 			Subcode: &soapFaultSubCode{
-				XMLNS: env.SOAPURN,
-				Value: env.CallError.ErrorCode,
+				Value: soapFaultSubCodeValue{
+					OcppNS:  env.SOAPURN,
+					Content: fmt.Sprintf("ocpp:%s", env.CallError.ErrorCode),
+				},
 			},
 		},
 		Reason: soapFaultReason{
