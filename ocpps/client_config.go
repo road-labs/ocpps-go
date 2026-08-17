@@ -3,8 +3,6 @@ package ocpps
 import "time"
 
 type ClientConfig struct {
-	// Timeout is the total time an outbound call is allowed to take before the underlying HTTP request is abandoned. It
-	//covers connection, request writing, response reading, and any redirects.
 	Timeout time.Duration
 }
 

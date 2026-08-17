@@ -1,17 +1,25 @@
 package ocpps
 
+import (
+	"crypto/tls"
+	"log/slog"
+	"time"
+)
+
 type ServerConfig struct {
-	// Path is the HTTP path the server accepts SOAP-wrapped OCPP calls on.
-	Path string
-	// HealthPath is the HTTP path the server exposes a health endpoint on, which responds with a 200 and "OK".
-	HealthPath string
+	Path              string
+	HealthPath        string
+	TLSConfig         *tls.Config
+	ReadHeaderTimeout time.Duration
+	Logger            *slog.Logger
 }
 
 type ServerOption func(*ServerConfig)
 
 const (
-	defaultServerPath = "/"
-	defaultHealthPath = "/health"
+	defaultServerPath        = "/"
+	defaultHealthPath        = "/health"
+	defaultReadHeaderTimeout = 30 * time.Second
 )
 
 func newServerConfig(opts []ServerOption) *ServerConfig {
@@ -24,6 +32,12 @@ func newServerConfig(opts []ServerOption) *ServerConfig {
 	}
 	if c.HealthPath == "" {
 		c.HealthPath = defaultHealthPath
+	}
+	if c.ReadHeaderTimeout == 0 {
+		c.ReadHeaderTimeout = defaultReadHeaderTimeout
+	}
+	if c.Logger == nil {
+		c.Logger = slog.New(slog.DiscardHandler)
 	}
 	return c
 }

@@ -2,6 +2,7 @@ package ocpps
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"log/slog"
@@ -17,11 +18,15 @@ import (
 // calls on a configured path, and invokes the supplied hooks for each call received. In the OCPP-S binding both
 // parties (charging station and central system) expose a SOAP endpoint, so this type can be used on either side.
 type Server struct {
-	listenAddr    string
-	soapURN       string
-	advertiseAddr string
-	hooks         ServerHooks
-	conf          *ServerConfig
+	listenAddr        string
+	soapURN           string
+	advertiseAddr     string
+	path              string
+	healthPath        string
+	tlsConfig         *tls.Config
+	readHeaderTimeout time.Duration
+	hooks             ServerHooks
+	logger            *slog.Logger
 }
 
 // NewServer creates a new server instance. listenAddr is the address the HTTP server will bind to (e.g. ":8080"),
@@ -34,37 +39,52 @@ func NewServer(listenAddr string, soapURN string, advertiseAddr string, hooks Se
 		return nil, errors.New("listenAddr, soapURN and advertiseAddr are required")
 	}
 
+	conf := newServerConfig(opts)
+
 	return &Server{
-		listenAddr:    listenAddr,
-		soapURN:       soapURN,
-		advertiseAddr: advertiseAddr,
-		hooks:         hooks,
-		conf:          newServerConfig(opts),
+		listenAddr:        listenAddr,
+		soapURN:           soapURN,
+		advertiseAddr:     advertiseAddr,
+		path:              conf.Path,
+		healthPath:        conf.HealthPath,
+		tlsConfig:         conf.TLSConfig,
+		readHeaderTimeout: conf.ReadHeaderTimeout,
+		hooks:             hooks,
+		logger:            conf.Logger,
 	}, nil
 }
 
 // Start runs the server. This is a blocking operation, and will not return until the server is interrupted in some
 // way (e.g. the supplied context is cancelled). Two endpoints are registered: the OCPP-S handler on the configured
 // path (defaulting to "/", which matches all paths), and a health endpoint at the configured health path
-// (defaulting to "/health").
+// (defaulting to "/health"). When a TLS config is set the server listens for HTTPS connections; otherwise it
+// listens in plaintext.
 func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
-	mux.HandleFunc(s.conf.HealthPath, s.handleHealth)
-	mux.HandleFunc(s.conf.Path, s.handleSoap)
+	mux.HandleFunc(s.healthPath, s.handleHealth)
+	mux.HandleFunc(s.path, s.handleSoap)
 
 	server := http.Server{
-		Addr:    s.listenAddr,
-		Handler: mux,
+		Addr:              s.listenAddr,
+		Handler:           mux,
+		TLSConfig:         s.tlsConfig,
+		ReadHeaderTimeout: s.readHeaderTimeout,
 	}
 
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		slog.Info(
+		s.logger.Info(
 			"ocpp-s server listening",
-			slog.String("addr", s.listenAddr),
-			slog.String("path", s.conf.Path),
+			slog.String("address", s.listenAddr),
+			slog.Bool("tls", s.tlsConfig != nil),
 		)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		var err error
+		if s.tlsConfig != nil {
+			err = server.ListenAndServeTLS("", "")
+		} else {
+			err = server.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
 		return nil
@@ -79,8 +99,8 @@ func (s *Server) Start(ctx context.Context) error {
 }
 
 // handleHealth responds with a 200 and "OK" body. It's intentionally minimal and does not attempt to probe any
-// dependencies; callers wanting a richer readiness check should embed the server via Handler and layer their own
-// health endpoint alongside it.
+// dependencies; callers wanting a richer readiness check should run their own health endpoint on a separate port
+// or in front of this server.
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("OK"))
@@ -93,6 +113,7 @@ func (s *Server) handleSoap(w http.ResponseWriter, req *http.Request) {
 		writer:        w,
 		soapURN:       s.soapURN,
 		advertiseAddr: s.advertiseAddr,
+		logger:        s.logger,
 	}
 
 	if req.Method != http.MethodPost {

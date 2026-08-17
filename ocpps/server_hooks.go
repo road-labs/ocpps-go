@@ -8,11 +8,8 @@ import (
 
 // ClientInfo describes the peer that initiated an incoming call, derived from headers on the inbound SOAP envelope.
 type ClientInfo struct {
-	// OCPPIdentity is the value of the chargeBoxIdentity SOAP header, uniquely identifying the peer charging
-	// station.
 	OCPPIdentity string
-	// FromURL is the value of the WS-Addressing From header, i.e. the URL the peer advertises for requests.
-	FromURL string
+	FromURL      string
 }
 
 // ResponseWriter is used from within a server hook to reply to an incoming call. Exactly one of WriteCallResult or

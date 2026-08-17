@@ -19,6 +19,7 @@ type soapResponseWriter struct {
 	req           *callEnvelope
 	soapURN       string
 	advertiseAddr string
+	logger        *slog.Logger
 	written       bool
 }
 
@@ -57,7 +58,7 @@ func (w *soapResponseWriter) writeCallResultEnvelope(env callResultEnvelope) err
 	resBody, err := marshalCallResult(env)
 	if err != nil {
 		http.Error(w.writer, "Internal Server Error", http.StatusInternalServerError)
-		slog.Warn("failed to marshal call error", slog.Any("error", err))
+		w.logger.Warn("failed to marshal call result", slog.Any("error", err))
 		return err
 	}
 	return w.write(http.StatusOK, resBody)
@@ -66,7 +67,7 @@ func (w *soapResponseWriter) writeCallResultEnvelope(env callResultEnvelope) err
 func (w *soapResponseWriter) writeCallErrorEnvelope(env callErrorEnvelope) error {
 	resBody, err := marshalCallError(env)
 	if err != nil {
-		slog.Warn("failed to marshal call error", slog.Any("error", err))
+		w.logger.Warn("failed to marshal call error", slog.Any("error", err))
 		return err
 	}
 	return w.write(http.StatusInternalServerError, resBody)

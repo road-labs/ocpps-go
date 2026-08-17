@@ -8,92 +8,103 @@ import (
 	"github.com/road-labs/ocpps-go/ocpps/message"
 )
 
-type SOAPEnvelope struct {
+type soapEnvelope struct {
 	XMLName xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Envelope"`
 
-	Header *SOAPHeader
-	Body   SOAPBody
+	Header *soapHeader
+	Body   soapBody
 }
 
-type SOAPHeader struct {
+type soapHeader struct {
 	XMLName                 xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Header"`
-	ChargeBoxIdentityHeader ChargeBoxIdentityHeader
-	ActionHeader            ActionHeader
-	MessageIDHeader         MessageIDHeader
-	FromHeader              FromHeader
-	ReplyToHeader           ReplyToHeader
-	ToHeader                ToHeader
-	RelatesTo               *RelatesTo
+	ChargeBoxIdentityHeader chargeBoxIdentityHeader
+	ActionHeader            actionHeader
+	MessageIDHeader         messageIDHeader
+	FromHeader              fromHeader
+	ReplyToHeader           replyToHeader
+	ToHeader                toHeader
+	RelatesTo               *relatesTo
 }
 
-type ChargeBoxIdentityHeader struct {
+type chargeBoxIdentityHeader struct {
 	XMLName  xml.Name `xml:"chargeBoxIdentity"`
 	XMLNS    string   `xml:"xmlns,attr"`
 	Identity string   `xml:",chardata"`
 }
 
-type ActionHeader struct {
+type actionHeader struct {
 	XMLName        xml.Name `xml:"http://www.w3.org/2005/08/addressing Action"`
 	MustUnderstand bool     `xml:"http://www.w3.org/2003/05/soap-envelope mustUnderstand,attr"`
 	Action         string   `xml:",chardata"`
 }
 
-type MessageIDHeader struct {
+type messageIDHeader struct {
 	XMLName   xml.Name `xml:"http://www.w3.org/2005/08/addressing MessageID"`
 	MessageID string   `xml:",chardata"`
 }
 
-type FromHeader struct {
+type fromHeader struct {
 	XMLName xml.Name `xml:"http://www.w3.org/2005/08/addressing From"`
-	From    Address
+	From    address
 }
 
-type ReplyToHeader struct {
+type replyToHeader struct {
 	XMLName xml.Name `xml:"http://www.w3.org/2005/08/addressing ReplyTo"`
-	ReplyTo Address
+	ReplyTo address
 }
 
-type ToHeader struct {
+type toHeader struct {
 	XMLName        xml.Name `xml:"http://www.w3.org/2005/08/addressing To"`
 	MustUnderstand bool     `xml:"http://www.w3.org/2003/05/soap-envelope mustUnderstand,attr"`
 	To             string   `xml:",chardata"`
 }
 
-type RelatesTo struct {
+type relatesTo struct {
 	XMLName   xml.Name `xml:"http://www.w3.org/2005/08/addressing RelatesTo"`
 	RelatesTo string   `xml:",chardata"`
 }
 
-type Address struct {
+type address struct {
 	XMLName xml.Name `xml:"http://www.w3.org/2005/08/addressing Address"`
 	Address string   `xml:",chardata"`
 }
 
-type SOAPBody struct {
+type soapBody struct {
 	XMLName xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Body"`
 	Payload []byte   `xml:",innerxml"`
 }
 
-type SOAPFault struct {
+type soapFault struct {
 	XMLName xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Fault"`
-	Code    SOAPFaultCode
-	Reason  string `xml:"Reason"`
+	Code    soapFaultCode
+	Reason  soapFaultReason
 	Node    string `xml:"Node,omitempty"`
 	Role    string `xml:"Role,omitempty"`
 	Detail  any    `xml:"Detail,omitempty"`
 }
 
-type SOAPFaultCode struct {
-	XMLName xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Code"`
-	Value   string   `xml:"Value"`
-	Subcode *SOAPFaultSubCode
+type soapFaultReason struct {
+	XMLName xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Reason"`
+	Text    soapFaultReasonText
 }
 
-type SOAPFaultSubCode struct {
+type soapFaultReasonText struct {
+	XMLName xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Text"`
+	Lang    string   `xml:"http://www.w3.org/XML/1998/namespace lang,attr"`
+	Value   string   `xml:",chardata"`
+}
+
+type soapFaultCode struct {
+	XMLName xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Code"`
+	Value   string   `xml:"Value"`
+	Subcode *soapFaultSubCode
+}
+
+type soapFaultSubCode struct {
 	XMLName xml.Name `xml:"Subcode"`
 	XMLNS   string   `xml:"xmlns,attr"`
 	Value   string   `xml:"Value"`
-	Subcode *SOAPFaultSubCode
+	Subcode *soapFaultSubCode
 }
 
 type callEnvelope struct {
@@ -125,41 +136,41 @@ type callErrorEnvelope struct {
 }
 
 func marshalCall(env callEnvelope) ([]byte, error) {
-	return xml.Marshal(SOAPEnvelope{
-		Header: &SOAPHeader{
-			ActionHeader: ActionHeader{
+	return xml.Marshal(soapEnvelope{
+		Header: &soapHeader{
+			ActionHeader: actionHeader{
 				MustUnderstand: true,
 				Action:         fmt.Sprintf("/%s", env.Call.Action),
 			},
-			MessageIDHeader: MessageIDHeader{
+			MessageIDHeader: messageIDHeader{
 				MessageID: env.Call.MessageID,
 			},
-			ReplyToHeader: ReplyToHeader{
-				ReplyTo: Address{
+			ReplyToHeader: replyToHeader{
+				ReplyTo: address{
 					Address: "http://www.w3.org/2005/08/addressing/anonymous",
 				},
 			},
-			ChargeBoxIdentityHeader: ChargeBoxIdentityHeader{
+			ChargeBoxIdentityHeader: chargeBoxIdentityHeader{
 				XMLNS:    env.SOAPURN,
 				Identity: env.OCPPIdentity,
 			},
-			FromHeader: FromHeader{
-				From: Address{
+			FromHeader: fromHeader{
+				From: address{
 					Address: env.From,
 				},
 			},
-			ToHeader: ToHeader{
+			ToHeader: toHeader{
 				To: env.To,
 			},
 		},
-		Body: SOAPBody{
+		Body: soapBody{
 			Payload: env.Call.Payload,
 		},
 	})
 }
 
 func unmarshalCall(b []byte) (callEnvelope, error) {
-	var env SOAPEnvelope
+	var env soapEnvelope
 	if err := xml.Unmarshal(b, &env); err != nil {
 		return callEnvelope{}, err
 	}
@@ -177,51 +188,51 @@ func unmarshalCall(b []byte) (callEnvelope, error) {
 }
 
 func marshalCallResult(env callResultEnvelope) ([]byte, error) {
-	return xml.Marshal(SOAPEnvelope{
-		Header: &SOAPHeader{
-			ActionHeader: ActionHeader{
+	return xml.Marshal(soapEnvelope{
+		Header: &soapHeader{
+			ActionHeader: actionHeader{
 				MustUnderstand: true,
 				Action:         fmt.Sprintf("/%s", env.Action),
 			},
-			MessageIDHeader: MessageIDHeader{
+			MessageIDHeader: messageIDHeader{
 				MessageID: env.MessageID,
 			},
-			ReplyToHeader: ReplyToHeader{
-				ReplyTo: Address{
+			ReplyToHeader: replyToHeader{
+				ReplyTo: address{
 					Address: "http://www.w3.org/2005/08/addressing/anonymous",
 				},
 			},
-			ChargeBoxIdentityHeader: ChargeBoxIdentityHeader{
+			ChargeBoxIdentityHeader: chargeBoxIdentityHeader{
 				XMLNS:    env.SOAPURN,
 				Identity: env.OCPPIdentity,
 			},
-			FromHeader: FromHeader{
-				From: Address{
+			FromHeader: fromHeader{
+				From: address{
 					Address: env.From,
 				},
 			},
-			ToHeader: ToHeader{
+			ToHeader: toHeader{
 				To: env.To,
 			},
-			RelatesTo: &RelatesTo{
+			RelatesTo: &relatesTo{
 				RelatesTo: env.CallResult.MessageID,
 			},
 		},
-		Body: SOAPBody{
+		Body: soapBody{
 			Payload: env.CallResult.Payload,
 		},
 	})
 }
 
 func unmarshalCallResult(b []byte) (callResultEnvelope, error) {
-	var env SOAPEnvelope
+	var env soapEnvelope
 	if err := xml.Unmarshal(b, &env); err != nil {
 		return callResultEnvelope{}, err
 	}
 
-	var relatesTo string
+	var relatesToID string
 	if env.Header.RelatesTo != nil {
-		relatesTo = env.Header.RelatesTo.RelatesTo
+		relatesToID = env.Header.RelatesTo.RelatesTo
 	}
 
 	if !strings.HasPrefix(env.Header.ActionHeader.Action, "/") {
@@ -231,7 +242,7 @@ func unmarshalCallResult(b []byte) (callResultEnvelope, error) {
 	return callResultEnvelope{
 		CallResult: message.CallResult{
 			Payload:   env.Body.Payload,
-			MessageID: relatesTo,
+			MessageID: relatesToID,
 		},
 		MessageID:    env.Header.MessageIDHeader.MessageID,
 		Action:       strings.TrimPrefix(env.Header.ActionHeader.Action, "/"),
@@ -257,57 +268,62 @@ var errorCodes = map[message.Error]faultCode{
 }
 
 func marshalCallError(env callErrorEnvelope) ([]byte, error) {
-	header := &SOAPHeader{
-		MessageIDHeader: MessageIDHeader{
+	header := &soapHeader{
+		MessageIDHeader: messageIDHeader{
 			MessageID: env.MessageID,
 		},
-		ReplyToHeader: ReplyToHeader{
-			ReplyTo: Address{
+		ReplyToHeader: replyToHeader{
+			ReplyTo: address{
 				Address: "http://www.w3.org/2005/08/addressing/anonymous",
 			},
 		},
-		ChargeBoxIdentityHeader: ChargeBoxIdentityHeader{
+		ChargeBoxIdentityHeader: chargeBoxIdentityHeader{
 			XMLNS:    env.SOAPURN,
 			Identity: env.OCPPIdentity,
 		},
-		FromHeader: FromHeader{
-			From: Address{
+		FromHeader: fromHeader{
+			From: address{
 				Address: env.From,
 			},
 		},
-		ToHeader: ToHeader{
+		ToHeader: toHeader{
 			To: env.To,
 		},
 	}
 	if env.Action != "" {
-		header.ActionHeader = ActionHeader{
+		header.ActionHeader = actionHeader{
 			MustUnderstand: true,
 			Action:         fmt.Sprintf("/%s", env.Action),
 		}
 	}
 	if env.CallError.MessageID != "" {
-		header.RelatesTo = &RelatesTo{
+		header.RelatesTo = &relatesTo{
 			RelatesTo: env.CallError.MessageID,
 		}
 	}
 
-	payload, err := xml.Marshal(SOAPFault{
-		Code: SOAPFaultCode{
+	payload, err := xml.Marshal(soapFault{
+		Code: soapFaultCode{
 			Value: string(errorCodes[message.Error(env.CallError.ErrorCode)]),
-			Subcode: &SOAPFaultSubCode{
+			Subcode: &soapFaultSubCode{
 				XMLNS: env.SOAPURN,
 				Value: env.CallError.ErrorCode,
 			},
 		},
-		Reason: env.CallError.ErrorDescription,
+		Reason: soapFaultReason{
+			Text: soapFaultReasonText{
+				Lang:  "en",
+				Value: env.CallError.ErrorDescription,
+			},
+		},
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return xml.Marshal(SOAPEnvelope{
+	return xml.Marshal(soapEnvelope{
 		Header: header,
-		Body: SOAPBody{
+		Body: soapBody{
 			Payload: payload,
 		},
 	})
