@@ -8,6 +8,8 @@ import (
 	"github.com/road-labs/ocpps-go/ocpps/message"
 )
 
+const wsaAnonymousURI = "http://www.w3.org/2005/08/addressing/anonymous"
+
 type soapEnvelope struct {
 	XMLName xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Envelope"`
 
@@ -21,15 +23,16 @@ type soapHeader struct {
 	ActionHeader            actionHeader
 	MessageIDHeader         messageIDHeader
 	FromHeader              fromHeader
-	ReplyToHeader           replyToHeader
+	ReplyToHeader           *replyToHeader
 	ToHeader                toHeader
 	RelatesTo               *relatesTo
 }
 
 type chargeBoxIdentityHeader struct {
-	XMLName  xml.Name `xml:"chargeBoxIdentity"`
-	XMLNS    string   `xml:"xmlns,attr"`
-	Identity string   `xml:",chardata"`
+	XMLName        xml.Name `xml:"chargeBoxIdentity"`
+	XMLNS          string   `xml:"xmlns,attr"`
+	MustUnderstand bool     `xml:"http://www.w3.org/2003/05/soap-envelope mustUnderstand,attr"`
+	Identity       string   `xml:",chardata"`
 }
 
 type actionHeader struct {
@@ -54,9 +57,8 @@ type replyToHeader struct {
 }
 
 type toHeader struct {
-	XMLName        xml.Name `xml:"http://www.w3.org/2005/08/addressing To"`
-	MustUnderstand bool     `xml:"http://www.w3.org/2003/05/soap-envelope mustUnderstand,attr"`
-	To             string   `xml:",chardata"`
+	XMLName xml.Name `xml:"http://www.w3.org/2005/08/addressing To"`
+	To      string   `xml:",chardata"`
 }
 
 type relatesTo struct {
@@ -96,10 +98,12 @@ type soapFaultReasonText struct {
 
 type soapFaultCode struct {
 	XMLName xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Code"`
-	Value   string   `xml:"Value"`
+	Value   string   `xml:"http://www.w3.org/2003/05/soap-envelope Value"`
 	Subcode *soapFaultSubCode
 }
 
+// soapFaultSubCode is OCPP-S 1.6's deliberate departure from SOAP 1.2 §5.4.1.3: the SubCode element (and its
+// Value child by default-namespace inheritance) sit in the OCPP namespace, not the SOAP envelope namespace.
 type soapFaultSubCode struct {
 	XMLName xml.Name `xml:"Subcode"`
 	XMLNS   string   `xml:"xmlns,attr"`
@@ -145,14 +149,15 @@ func marshalCall(env callEnvelope) ([]byte, error) {
 			MessageIDHeader: messageIDHeader{
 				MessageID: env.Call.MessageID,
 			},
-			ReplyToHeader: replyToHeader{
+			ReplyToHeader: &replyToHeader{
 				ReplyTo: address{
-					Address: "http://www.w3.org/2005/08/addressing/anonymous",
+					Address: wsaAnonymousURI,
 				},
 			},
 			ChargeBoxIdentityHeader: chargeBoxIdentityHeader{
-				XMLNS:    env.SOAPURN,
-				Identity: env.OCPPIdentity,
+				XMLNS:          env.SOAPURN,
+				MustUnderstand: true,
+				Identity:       env.OCPPIdentity,
 			},
 			FromHeader: fromHeader{
 				From: address{
@@ -197,14 +202,10 @@ func marshalCallResult(env callResultEnvelope) ([]byte, error) {
 			MessageIDHeader: messageIDHeader{
 				MessageID: env.MessageID,
 			},
-			ReplyToHeader: replyToHeader{
-				ReplyTo: address{
-					Address: "http://www.w3.org/2005/08/addressing/anonymous",
-				},
-			},
 			ChargeBoxIdentityHeader: chargeBoxIdentityHeader{
-				XMLNS:    env.SOAPURN,
-				Identity: env.OCPPIdentity,
+				XMLNS:          env.SOAPURN,
+				MustUnderstand: true,
+				Identity:       env.OCPPIdentity,
 			},
 			FromHeader: fromHeader{
 				From: address{
@@ -267,19 +268,23 @@ var errorCodes = map[message.Error]faultCode{
 	message.NotSupported:     faultCodeReceiver,
 }
 
+// faultCodeFor looks up the SOAP fault class for an OCPP error code. Unknown codes default to Receiver.
+func faultCodeFor(errorCode string) faultCode {
+	if code, ok := errorCodes[message.Error(errorCode)]; ok {
+		return code
+	}
+	return faultCodeReceiver
+}
+
 func marshalCallError(env callErrorEnvelope) ([]byte, error) {
 	header := &soapHeader{
 		MessageIDHeader: messageIDHeader{
 			MessageID: env.MessageID,
 		},
-		ReplyToHeader: replyToHeader{
-			ReplyTo: address{
-				Address: "http://www.w3.org/2005/08/addressing/anonymous",
-			},
-		},
 		ChargeBoxIdentityHeader: chargeBoxIdentityHeader{
-			XMLNS:    env.SOAPURN,
-			Identity: env.OCPPIdentity,
+			XMLNS:          env.SOAPURN,
+			MustUnderstand: true,
+			Identity:       env.OCPPIdentity,
 		},
 		FromHeader: fromHeader{
 			From: address{
@@ -304,7 +309,7 @@ func marshalCallError(env callErrorEnvelope) ([]byte, error) {
 
 	payload, err := xml.Marshal(soapFault{
 		Code: soapFaultCode{
-			Value: string(errorCodes[message.Error(env.CallError.ErrorCode)]),
+			Value: string(faultCodeFor(env.CallError.ErrorCode)),
 			Subcode: &soapFaultSubCode{
 				XMLNS: env.SOAPURN,
 				Value: env.CallError.ErrorCode,

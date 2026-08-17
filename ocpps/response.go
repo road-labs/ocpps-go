@@ -70,7 +70,11 @@ func (w *soapResponseWriter) writeCallErrorEnvelope(env callErrorEnvelope) error
 		w.logger.Warn("failed to marshal call error", slog.Any("error", err))
 		return err
 	}
-	return w.write(http.StatusInternalServerError, resBody)
+	status := http.StatusInternalServerError
+	if faultCodeFor(env.CallError.ErrorCode) == faultCodeSender {
+		status = http.StatusBadRequest
+	}
+	return w.write(status, resBody)
 }
 
 func (w *soapResponseWriter) write(statusCode int, resBody []byte) error {

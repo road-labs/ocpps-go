@@ -80,7 +80,8 @@ func TestServer_HandleRequest(t *testing.T) {
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
-		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+		// ProtocolError is a Sender-class fault: HTTP 400 per SOAP 1.2 §7.1.1.
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 		body := readBody(t, resp)
 		assert.Contains(t, body, string(message.ProtocolError))
 		assert.False(t, hooks.called, "OnCallRead should not be invoked for non-POST requests")
@@ -93,7 +94,8 @@ func TestServer_HandleRequest(t *testing.T) {
 		resp := doPost(t, baseURL, "not xml")
 		defer resp.Body.Close()
 
-		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+		// ProtocolError is a Sender-class fault: HTTP 400 per SOAP 1.2 §7.1.1.
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 		body := readBody(t, resp)
 		assert.Contains(t, body, string(message.ProtocolError))
 		assert.False(t, hooks.called, "OnCallRead should not be invoked when the envelope cannot be parsed")
@@ -144,7 +146,7 @@ func TestServer_HandleRequest(t *testing.T) {
 		defaultResp, err := http.Get(baseURL + "/health")
 		require.NoError(t, err)
 		defer defaultResp.Body.Close()
-		assert.Equal(t, http.StatusInternalServerError, defaultResp.StatusCode)
+		assert.Equal(t, http.StatusBadRequest, defaultResp.StatusCode)
 		assert.Contains(t, readBody(t, defaultResp), string(message.ProtocolError))
 	})
 
