@@ -2,6 +2,7 @@ package ocpps
 
 import (
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -10,11 +11,32 @@ import (
 
 const wsaAnonymousURI = "http://www.w3.org/2005/08/addressing/anonymous"
 
+type faultCode string
+
+const (
+	faultCodeSender   faultCode = "Sender"
+	faultCodeReceiver faultCode = "Receiver"
+)
+
+var errorCodes = map[message.Error]faultCode{
+	message.SecurityError:    faultCodeSender,
+	message.IdentityMismatch: faultCodeSender,
+	message.ProtocolError:    faultCodeSender,
+	message.InternalError:    faultCodeReceiver,
+	message.NotSupported:     faultCodeReceiver,
+}
+
 type soapEnvelope struct {
 	XMLName xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Envelope"`
 
 	Header *soapHeader
 	Body   soapBody
+}
+
+type soapFaultEnvelope struct {
+	XMLName xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Envelope"`
+	Header  *soapHeader
+	Body    faultBody
 }
 
 type soapHeader struct {
@@ -26,6 +48,11 @@ type soapHeader struct {
 	ReplyToHeader           *replyToHeader
 	ToHeader                toHeader
 	RelatesTo               *relatesTo
+}
+
+type faultBody struct {
+	XMLName xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Body"`
+	Fault   soapFault
 }
 
 type chargeBoxIdentityHeader struct {
@@ -228,15 +255,13 @@ func marshalCallResult(env callResultEnvelope) ([]byte, error) {
 	})
 }
 
-func unmarshalCallResult(b []byte) (callResultEnvelope, error) {
+// unmarshalCallResult parses a SOAP-wrapped call result envelope. The caller supplies the original call's messageID
+// because in practice not every CSMS emits a WS-Addressing RelatesTo header on responses, so we can't rely on it
+// for correlation - the call is always in scope on the caller's side and can be threaded through directly.
+func unmarshalCallResult(b []byte, messageID string) (callResultEnvelope, error) {
 	var env soapEnvelope
 	if err := xml.Unmarshal(b, &env); err != nil {
 		return callResultEnvelope{}, err
-	}
-
-	var relatesToID string
-	if env.Header.RelatesTo != nil {
-		relatesToID = env.Header.RelatesTo.RelatesTo
 	}
 
 	if !strings.HasPrefix(env.Header.ActionHeader.Action, "/") {
@@ -246,7 +271,7 @@ func unmarshalCallResult(b []byte) (callResultEnvelope, error) {
 	return callResultEnvelope{
 		CallResult: message.CallResult{
 			Payload:   env.Body.Payload,
-			MessageID: relatesToID,
+			MessageID: messageID,
 		},
 		MessageID:    env.Header.MessageIDHeader.MessageID,
 		Action:       strings.TrimPrefix(env.Header.ActionHeader.Action, "/"),
@@ -254,29 +279,6 @@ func unmarshalCallResult(b []byte) (callResultEnvelope, error) {
 		From:         env.Header.FromHeader.From.Address,
 		To:           env.Header.ToHeader.To,
 	}, nil
-}
-
-type faultCode string
-
-const (
-	faultCodeSender   faultCode = "Sender"
-	faultCodeReceiver faultCode = "Receiver"
-)
-
-var errorCodes = map[message.Error]faultCode{
-	message.SecurityError:    faultCodeSender,
-	message.IdentityMismatch: faultCodeSender,
-	message.ProtocolError:    faultCodeSender,
-	message.InternalError:    faultCodeReceiver,
-	message.NotSupported:     faultCodeReceiver,
-}
-
-// faultCodeFor looks up the SOAP fault class for an OCPP error code. Unknown codes default to Receiver.
-func faultCodeFor(errorCode string) faultCode {
-	if code, ok := errorCodes[message.Error(errorCode)]; ok {
-		return code
-	}
-	return faultCodeReceiver
 }
 
 func marshalCallError(env callErrorEnvelope) ([]byte, error) {
@@ -310,31 +312,62 @@ func marshalCallError(env callErrorEnvelope) ([]byte, error) {
 		}
 	}
 
-	payload, err := xml.Marshal(soapFault{
-		Code: soapFaultCode{
-			Value: string(faultCodeFor(env.CallError.ErrorCode)),
-			Subcode: &soapFaultSubCode{
-				Value: soapFaultSubCodeValue{
-					OcppNS:  env.SOAPURN,
-					Content: fmt.Sprintf("ocpp:%s", env.CallError.ErrorCode),
+	return xml.Marshal(soapFaultEnvelope{
+		Header: header,
+		Body: faultBody{
+			Fault: soapFault{
+				Code: soapFaultCode{
+					Value: string(faultCodeFor(env.CallError.ErrorCode)),
+					Subcode: &soapFaultSubCode{
+						Value: soapFaultSubCodeValue{
+							OcppNS:  env.SOAPURN,
+							Content: fmt.Sprintf("ocpp:%s", env.CallError.ErrorCode),
+						},
+					},
+				},
+				Reason: soapFaultReason{
+					Text: soapFaultReasonText{
+						Lang:  "en",
+						Value: env.CallError.ErrorDescription,
+					},
 				},
 			},
 		},
-		Reason: soapFaultReason{
-			Text: soapFaultReasonText{
-				Lang:  "en",
-				Value: env.CallError.ErrorDescription,
-			},
-		},
 	})
-	if err != nil {
-		return nil, err
+}
+
+// unmarshalCallError parses a SOAP fault envelope into a message.CallError. The caller supplies the original
+// call's messageID because in practice not every CSMS emits a WS-Addressing RelatesTo header on fault responses,
+// so we can't rely on it for correlation - the call is always in scope on the caller's side and can be threaded
+// through directly.
+func unmarshalCallError(b []byte, messageID string) (message.CallError, error) {
+	var env soapFaultEnvelope
+	if err := xml.Unmarshal(b, &env); err != nil {
+		return message.CallError{}, err
 	}
 
-	return xml.Marshal(soapEnvelope{
-		Header: header,
-		Body: soapBody{
-			Payload: payload,
-		},
-	})
+	fault := env.Body.Fault
+	if fault.Code.Subcode == nil {
+		return message.CallError{}, errors.New("SOAP fault has no Subcode")
+	}
+
+	return message.CallError{
+		MessageID:        messageID,
+		ErrorCode:        stripQNamePrefix(fault.Code.Subcode.Value.Content),
+		ErrorDescription: fault.Reason.Text.Value,
+	}, nil
+}
+
+func faultCodeFor(errorCode string) faultCode {
+	if code, ok := errorCodes[message.Error(errorCode)]; ok {
+		return code
+	}
+	return faultCodeReceiver
+}
+
+func stripQNamePrefix(qname string) string {
+	if _, after, ok := strings.Cut(qname, ":"); ok {
+		return after
+	}
+	return qname
 }

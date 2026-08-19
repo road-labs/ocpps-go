@@ -113,6 +113,7 @@ func (s *Server) handleSoap(w http.ResponseWriter, req *http.Request) {
 		writer:        w,
 		soapURN:       s.soapURN,
 		advertiseAddr: s.advertiseAddr,
+		hooks:         s.hooks,
 		logger:        s.logger,
 	}
 

@@ -1,9 +1,13 @@
 package ocpps
 
-import "time"
+import (
+	"log/slog"
+	"time"
+)
 
 type ClientConfig struct {
 	Timeout time.Duration
+	Logger  *slog.Logger
 }
 
 type ClientOption func(*ClientConfig)
@@ -17,6 +21,9 @@ func newClientConfig(opts []ClientOption) *ClientConfig {
 	}
 	if c.Timeout == 0 {
 		c.Timeout = defaultClientTimeout
+	}
+	if c.Logger == nil {
+		c.Logger = slog.New(slog.DiscardHandler)
 	}
 	return c
 }

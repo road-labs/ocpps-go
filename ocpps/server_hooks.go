@@ -6,7 +6,10 @@ import (
 	"github.com/road-labs/ocpps-go/ocpps/message"
 )
 
-// ClientInfo describes the peer that initiated an incoming call, derived from headers on the inbound SOAP envelope.
+// ClientInfo describes a client party in the OCPP-S context by its OCPP identity and advertised From URL. On the
+// server side it describes the peer that initiated an incoming call (derived from the inbound SOAP envelope's
+// chargeBoxIdentity and From headers). On the client side it describes the local client itself — the identity and
+// From URL configured on the Client.
 type ClientInfo struct {
 	OCPPIdentity string
 	FromURL      string
@@ -21,10 +24,14 @@ type ResponseWriter interface {
 	WriteCallError(context.Context, message.CallError) error
 }
 
-// ServerHooks defines the callbacks used by a Server to notify the caller about incoming calls.
+// ServerHooks defines the callbacks used by a Server to notify the caller about incoming calls and outgoing replies.
 type ServerHooks interface {
 	// OnCallRead is invoked when the server receives a call from a peer. A reply must be sent by calling
 	// WriteCallResult or WriteCallError on the supplied ResponseWriter; if the hook returns a non-nil error and no
 	// reply has been written, the server will send a generic InternalError call error on the caller's behalf.
 	OnCallRead(context.Context, *ClientInfo, message.Call, ResponseWriter) error
+	// OnCallResultWritten is invoked after a successful call result has been written to the peer.
+	OnCallResultWritten(context.Context, *ClientInfo, message.CallResult) error
+	// OnCallErrorWritten is invoked after a call error has been written to the peer.
+	OnCallErrorWritten(context.Context, *ClientInfo, message.CallError) error
 }

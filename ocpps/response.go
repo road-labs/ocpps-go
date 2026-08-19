@@ -19,39 +19,70 @@ type soapResponseWriter struct {
 	req           *callEnvelope
 	soapURN       string
 	advertiseAddr string
+	hooks         ServerHooks
 	logger        *slog.Logger
 	written       bool
 }
 
-func (w *soapResponseWriter) WriteCallResult(_ context.Context, callResult message.CallResult) error {
+func (w *soapResponseWriter) WriteCallResult(ctx context.Context, callResult message.CallResult) error {
 	if w.req == nil {
 		return errors.New("request must be set to write call result")
 	}
 	env := callResultEnvelope{
-		CallResult:   callResult,
-		SOAPURN:      w.soapURN,
-		MessageID:    uuid.NewString(),
+		CallResult: callResult,
+		SOAPURN:    w.soapURN,
+		// The WS-Addressing MessageID on the response echoes the request's MessageID rather than being freshly
+		// generated. OCPP-S 1.6 §3.5 treats MessageID as the correlation key between request and response.
+		MessageID:    w.req.Call.MessageID,
 		Action:       w.req.Call.Action + "Response",
 		OCPPIdentity: w.req.OCPPIdentity,
 		From:         w.advertiseAddr,
 		To:           w.req.From,
 	}
-	return w.writeCallResultEnvelope(env)
+	if err := w.writeCallResultEnvelope(env); err != nil {
+		return err
+	}
+	if err := w.hooks.OnCallResultWritten(ctx, w.clientInfo(), callResult); err != nil {
+		w.logger.Error("failed to invoke call result written hook", slog.Any("error", err))
+	}
+	return nil
 }
 
-func (w *soapResponseWriter) WriteCallError(_ context.Context, callError message.CallError) error {
+func (w *soapResponseWriter) WriteCallError(ctx context.Context, callError message.CallError) error {
 	env := callErrorEnvelope{
 		CallError: callError,
 		SOAPURN:   w.soapURN,
-		MessageID: uuid.NewString(),
 		From:      w.advertiseAddr,
 	}
 	if w.req != nil {
+		// Echo the request's MessageID; see WriteCallResult for the rationale.
+		env.MessageID = w.req.Call.MessageID
 		env.To = w.req.From
 		env.OCPPIdentity = w.req.OCPPIdentity
 		env.Action = w.req.Call.Action + "Response"
+	} else {
+		// Pre-parse errors (invalid HTTP method, malformed envelope) have no request MessageID to echo - fall back
+		// to a fresh UUID so the WS-Addressing MessageID header is still populated.
+		env.MessageID = uuid.NewString()
 	}
-	return w.writeCallErrorEnvelope(env)
+	if err := w.writeCallErrorEnvelope(env); err != nil {
+		return err
+	}
+	// Only fire the hook when we know who the peer is; pre-parse errors don't have a ClientInfo.
+	if w.req != nil {
+		if err := w.hooks.OnCallErrorWritten(ctx, w.clientInfo(), callError); err != nil {
+			w.logger.Error("failed to invoke call error written hook", slog.Any("error", err))
+		}
+	}
+	return nil
+}
+
+// clientInfo builds a ClientInfo from the parsed request envelope. Only safe to call after w.req has been set.
+func (w *soapResponseWriter) clientInfo() *ClientInfo {
+	return &ClientInfo{
+		OCPPIdentity: w.req.OCPPIdentity,
+		FromURL:      w.req.From,
+	}
 }
 
 func (w *soapResponseWriter) writeCallResultEnvelope(env callResultEnvelope) error {

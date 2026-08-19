@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -240,6 +241,8 @@ type captureHooks struct {
 	called        bool
 	gotClientInfo *ocpps.ClientInfo
 	gotCall       message.Call
+	resultWritten atomic.Int32
+	errorWritten  atomic.Int32
 }
 
 func (h *captureHooks) OnCallRead(_ context.Context, info *ocpps.ClientInfo, call message.Call, w ocpps.ResponseWriter) error {
@@ -250,6 +253,16 @@ func (h *captureHooks) OnCallRead(_ context.Context, info *ocpps.ClientInfo, cal
 		return nil
 	}
 	return h.respond(info, call, w)
+}
+
+func (h *captureHooks) OnCallResultWritten(context.Context, *ocpps.ClientInfo, message.CallResult) error {
+	h.resultWritten.Add(1)
+	return nil
+}
+
+func (h *captureHooks) OnCallErrorWritten(context.Context, *ocpps.ClientInfo, message.CallError) error {
+	h.errorWritten.Add(1)
+	return nil
 }
 
 func doPost(t *testing.T, url, body string) *http.Response {
