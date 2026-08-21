@@ -147,11 +147,9 @@ func (s *serverHooks) OnCallRead(ctx context.Context, info *ocpps.ClientInfo, ca
 	// Reply via w.WriteCallResult or w.WriteCallError.
 	return nil
 }
-
 func (s *serverHooks) OnCallResultWritten(context.Context, *ocpps.ClientInfo, message.CallResult) error {
 	return nil
 }
-
 func (s *serverHooks) OnCallErrorWritten(context.Context, *ocpps.ClientInfo, message.CallError) error {
 	return nil
 }
